@@ -44,7 +44,6 @@ pub fn build(b: *std.Build) void {
     const install_release_step = b.step("install-release", "Build ReleaseSmall and install to the docs install directory");
     const install_release = InstallReleaseStep.create(b, release_exe.getEmittedBin(), getInstallPrefix(b), release_exe.out_filename);
     install_release_step.dependOn(&install_release.step);
-
 }
 
 fn addWhereizExecutable(
