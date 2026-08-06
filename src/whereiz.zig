@@ -537,6 +537,39 @@ test "findFilePaths reports a file once when directories differ only by case" {
     try testing.expectEqual(@as(usize, 1), results.len);
 }
 
+test "findFilePaths reports a candidate that is a broken symlink" {
+    var tmp = testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    try makeDirs(&tmp, &.{"alias_dir"});
+    makeBrokenSymlink(&tmp, "alias_dir\\foo.exe", "missing_target.bin") catch |err| switch (err) {
+        error.AccessDenied, error.PermissionDenied => return error.SkipZigTest,
+        else => return err,
+    };
+
+    const config = try makeConfig(testing.allocator, &tmp, .{
+        .safe_dll_search = true,
+        .working_dir = "work",
+        .executable_dir = "alias_dir",
+        .system_dir = "sys",
+        .windows_system_dir = "win_sys",
+        .windows_dir = "win",
+        .machine_path = &.{},
+        .known_dlls = &.{},
+        .dll_directory = null,
+    });
+    defer freeConfig(testing.allocator, &config);
+
+    const results = try findFilePaths(std.testing.io, testing.allocator, &config.config, "foo.exe");
+    defer freePaths(testing.allocator, results);
+
+    const expected = [_][]const u8{"alias_dir/foo.exe"};
+    try expectResultsEqual(config.base, &expected, results);
+}
+
+fn makeBrokenSymlink(tmp: *testing.TmpDir, link_relative: []const u8, target: []const u8) !void {
+    try tmp.dir.symLink(std.testing.io, target, link_relative, .{});
+}
 test "findFilePaths skips non-absolute search directories" {
     var tmp = testing.tmpDir(.{});
     defer tmp.cleanup();
@@ -842,3 +875,6 @@ test "parseArgs reads the executable directory" {
     try testing.expectEqualStrings("C:\\work", cli.working_dir.?);
     try testing.expectEqualStrings("C:\\bin", cli.executable_dir.?);
 }
+
+
+
