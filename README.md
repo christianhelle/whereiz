@@ -48,7 +48,7 @@ first match in `PATH`".
 Install the latest release and add it to your user `PATH`:
 
 ```powershell
-irm https://github.com/christianhelle/whereiz/raw/main/docs/install.ps1 | iex
+irm https://christianhelle.com/whereiz/install.ps1 | iex
 ```
 
 The installer downloads the official release binary into
