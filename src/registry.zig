@@ -19,6 +19,8 @@ const LPCWSTR = windows.LPCWSTR;
 const LPWSTR = windows.LPWSTR;
 
 const ERROR_SUCCESS: LSTATUS = 0;
+const ERROR_MORE_DATA: LSTATUS = 234;
+const ERROR_NO_MORE_ITEMS: LSTATUS = 259;
 
 const REG_SZ: DWORD = 1;
 const REG_DWORD: DWORD = 4;
@@ -88,41 +90,106 @@ comptime {
     if (builtin.os.tag != .windows) @compileError("registry module only supports Windows");
 }
 
+/// An open registry key. Close it with `close`; the handle is not managed
+/// by the allocator.
 pub const Key = struct {
     handle: HKEY,
 
+    /// Opens the key at `path` below `root`, walking each backslash segment
+    /// so a missing intermediate segment yields `null`.
     pub fn open(allocator: Allocator, root: HKEY, path: []const u8) !?Key {
-        _ = allocator;
-        _ = root;
-        _ = path;
-        return null;
+        var result: ?Key = null;
+        var parent = root;
+        var it = std.mem.splitScalar(u8, path, '\\');
+        while (it.next()) |segment| {
+            if (segment.len == 0) continue;
+            const segment_w = try std.unicode.wtf8ToWtf16LeAllocZ(allocator, segment);
+            defer allocator.free(segment_w);
+
+            var child: HKEY = undefined;
+            const status = RegOpenKeyExW(parent, segment_w.ptr, 0, KEY_READ, &child);
+
+            if (result) |opened| opened.close();
+            result = null;
+            if (status != ERROR_SUCCESS) return null;
+
+            result = .{ .handle = child };
+            parent = child;
+        }
+        return result;
     }
 
     pub fn close(self: Key) void {
-        _ = self;
+        _ = RegCloseKey(self.handle);
     }
 
+    /// Returns the REG_SZ value named `name`, or `null` when the value does
+    /// not exist or is not a well-formed wide string.
     pub fn queryString(self: Key, allocator: Allocator, name: []const u8) !?[]const u8 {
-        _ = self;
-        _ = allocator;
-        _ = name;
-        return null;
+        const name_w = try std.unicode.wtf8ToWtf16LeAllocZ(allocator, name);
+        defer allocator.free(name_w);
+
+        var value_type: DWORD = 0;
+        var size: DWORD = 0;
+        if (RegQueryValueExW(self.handle, name_w.ptr, null, &value_type, null, &size) != ERROR_SUCCESS) return null;
+        if (size == 0 or size % 2 != 0) return null;
+
+        const buffer = try allocator.alloc(u16, size / 2);
+        defer allocator.free(buffer);
+        if (RegQueryValueExW(self.handle, name_w.ptr, null, &value_type, @ptrCast(buffer.ptr), &size) != ERROR_SUCCESS) return null;
+
+        var end: usize = buffer.len;
+        while (end > 0 and buffer[end - 1] == 0) end -= 1;
+        return try std.unicode.wtf16LeToWtf8Alloc(allocator, buffer[0..end]);
     }
 
+    /// Returns the REG_DWORD value named `name`, or `null` when the value
+    /// does not exist or is not a dword.
     pub fn queryDword(self: Key, allocator: Allocator, name: []const u8) !?u32 {
-        _ = self;
-        _ = allocator;
-        _ = name;
-        return null;
+        const name_w = try std.unicode.wtf8ToWtf16LeAllocZ(allocator, name);
+        defer allocator.free(name_w);
+
+        var value_type: DWORD = 0;
+        var value: DWORD = 0;
+        var size: DWORD = @sizeOf(DWORD);
+        if (RegQueryValueExW(self.handle, name_w.ptr, null, &value_type, @ptrCast(&value), &size) != ERROR_SUCCESS) return null;
+        if (value_type != REG_DWORD) return null;
+        return value;
     }
 
+    /// Returns the names of every value stored under the key, in no
+    /// particular order. Free the result with `freeValueNames`.
     pub fn enumValueNames(self: Key, allocator: Allocator) ![]const []const u8 {
-        _ = self;
-        return allocator.alloc([]const u8, 0);
+        var names: std.ArrayList([]const u8) = .empty;
+        errdefer {
+            for (names.items) |name| allocator.free(name);
+            names.deinit(allocator);
+        }
+
+        var index: DWORD = 0;
+        while (true) {
+            var buffer: [4096:0]u16 = undefined;
+            var name_length: DWORD = buffer.len;
+            const status = RegEnumValueW(self.handle, index, &buffer, &name_length, null, null, null, null);
+            switch (status) {
+                ERROR_NO_MORE_ITEMS => break,
+                ERROR_SUCCESS => {},
+                ERROR_MORE_DATA => return error.NameTooLong,
+                else => break,
+            }
+            const name = try std.unicode.wtf16LeToWtf8Alloc(allocator, buffer[0..name_length]);
+            errdefer allocator.free(name);
+            try names.append(allocator, name);
+            index += 1;
+        }
+
+        return names.toOwnedSlice(allocator);
     }
 };
 
+/// Frees a slice returned by `Key.enumValueNames`, including every name in it.
 pub fn freeValueNames(allocator: Allocator, names: []const []const u8) void {
+    for (names) |name| allocator.free(name);
     allocator.free(names);
 }
 
