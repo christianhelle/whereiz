@@ -2,6 +2,11 @@ const std = @import("std");
 const builtin = @import("builtin");
 
 const whereiz = @import("whereiz.zig");
+const registry = @import("registry.zig");
+
+comptime {
+    _ = registry;
+}
 
 const windows = std.os.windows;
 const Architecture = whereiz.Architecture;
