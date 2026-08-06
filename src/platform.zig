@@ -4,10 +4,6 @@ const builtin = @import("builtin");
 const whereiz = @import("whereiz.zig");
 const registry = @import("registry.zig");
 
-comptime {
-    _ = registry;
-}
-
 const windows = std.os.windows;
 const Architecture = whereiz.Architecture;
 const Allocator = std.mem.Allocator;
@@ -99,9 +95,9 @@ pub fn windowsDirectory(allocator: Allocator) ![]const u8 {
 }
 
 pub fn safeDllSearch(allocator: Allocator) !bool {
-    const key = try openSubKeyPath(allocator, windows.HKEY_LOCAL_MACHINE, session_manager_path) orelse return true;
-    defer _ = RegCloseKey(key);
-    const value = try queryDwordValue(allocator, key, "SafeDllSearchMode") orelse return true;
+    const key = try registry.Key.open(allocator, windows.HKEY_LOCAL_MACHINE, session_manager_path) orelse return true;
+    defer key.close();
+    const value = try key.queryDword(allocator, "SafeDllSearchMode") orelse return true;
     return value != 0;
 }
 
