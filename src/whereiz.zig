@@ -187,14 +187,14 @@ pub fn parseArgs(default_architecture: Architecture, args: []const []const u8) C
 
 fn fileExists(io: Io, path: []const u8) bool {
     if (!std.Io.Dir.path.isAbsolute(path)) return false;
-    var file = Io.Dir.openFileAbsolute(io, path, .{}) catch return false;
+    var file = Io.Dir.openFileAbsolute(io, path, .{ .follow_symlinks = false }) catch return false;
     file.close(io);
     return true;
 }
 
 fn dirExists(io: Io, path: []const u8) bool {
     if (!std.Io.Dir.path.isAbsolute(path)) return false;
-    var dir = Io.Dir.openDirAbsolute(io, path, .{}) catch return false;
+    var dir = Io.Dir.openDirAbsolute(io, path, .{ .follow_symlinks = false }) catch return false;
     dir.close(io);
     return true;
 }
@@ -875,6 +875,8 @@ test "parseArgs reads the executable directory" {
     try testing.expectEqualStrings("C:\\work", cli.working_dir.?);
     try testing.expectEqualStrings("C:\\bin", cli.executable_dir.?);
 }
+
+
 
 
 
