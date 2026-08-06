@@ -148,6 +148,47 @@ pub fn find(io: Io, allocator: Allocator, config: *const Config, query: []const 
     return findCommandPaths(io, allocator, config, query);
 }
 
+pub const Cli = struct {
+    show_usage: bool,
+    query: ?[]const u8,
+    architecture: Architecture,
+    working_dir: ?[]const u8,
+    executable_dir: ?[]const u8,
+};
+
+pub fn parseArgs(default_architecture: Architecture, args: []const []const u8) Cli {
+    if (args.len == 0) {
+        return .{
+            .show_usage = true,
+            .query = null,
+            .architecture = default_architecture,
+            .working_dir = null,
+            .executable_dir = null,
+        };
+    }
+
+    var cli = Cli{
+        .show_usage = false,
+        .query = args[0],
+        .architecture = default_architecture,
+        .working_dir = null,
+        .executable_dir = null,
+    };
+
+    if (args.len > 1) {
+        if (std.mem.eql(u8, args[1], "x86")) {
+            cli.architecture = .x86;
+        } else if (std.mem.eql(u8, args[1], "x64")) {
+            cli.architecture = .x64;
+        }
+    }
+
+    if (args.len > 2) cli.working_dir = args[2];
+    if (args.len > 3) cli.executable_dir = args[3];
+
+    return cli;
+}
+
 fn fileExists(io: Io, path: []const u8) bool {
     var file = Io.Dir.openFileAbsolute(io, path, .{}) catch return false;
     file.close(io);
@@ -615,4 +656,56 @@ test "find dispatches dotted names to file search" {
 
     const expected = [_][]const u8{"exe_dir/kernel32.dll"};
     try expectResultsEqual(config.base, &expected, results);
+}
+
+test "parseArgs shows usage when no arguments are given" {
+    const cli = parseArgs(.x64, &.{});
+
+    try testing.expect(cli.show_usage);
+    try testing.expect(cli.query == null);
+    try testing.expectEqual(Architecture.x64, cli.architecture);
+    try testing.expect(cli.working_dir == null);
+    try testing.expect(cli.executable_dir == null);
+}
+
+test "parseArgs takes the first argument as the query" {
+    const cli = parseArgs(.x86, &.{"cmd"});
+
+    try testing.expect(!cli.show_usage);
+    try testing.expectEqualStrings("cmd", cli.query.?);
+    try testing.expectEqual(Architecture.x86, cli.architecture);
+    try testing.expect(cli.working_dir == null);
+    try testing.expect(cli.executable_dir == null);
+}
+
+test "parseArgs overrides the architecture with x86" {
+    const cli = parseArgs(.x64, &.{ "cmd", "x86" });
+
+    try testing.expectEqual(Architecture.x86, cli.architecture);
+}
+
+test "parseArgs overrides the architecture with x64" {
+    const cli = parseArgs(.x86, &.{ "cmd", "x64" });
+
+    try testing.expectEqual(Architecture.x64, cli.architecture);
+}
+
+test "parseArgs keeps the default architecture for an unknown override" {
+    const cli = parseArgs(.x64, &.{ "cmd", "arm" });
+
+    try testing.expectEqual(Architecture.x64, cli.architecture);
+}
+
+test "parseArgs reads the working directory" {
+    const cli = parseArgs(.x64, &.{ "foo.dll", "x86", "C:\\work" });
+
+    try testing.expectEqualStrings("C:\\work", cli.working_dir.?);
+    try testing.expect(cli.executable_dir == null);
+}
+
+test "parseArgs reads the executable directory" {
+    const cli = parseArgs(.x64, &.{ "foo.dll", "x86", "C:\\work", "C:\\bin" });
+
+    try testing.expectEqualStrings("C:\\work", cli.working_dir.?);
+    try testing.expectEqualStrings("C:\\bin", cli.executable_dir.?);
 }
