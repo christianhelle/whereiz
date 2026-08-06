@@ -9,28 +9,8 @@ pub fn build(b: *std.Build) void {
         .target = target,
     });
 
-    // Here we define an executable. An executable needs to have a root module
-    // which needs to expose a `main` function. While we could add a main function
-    // to the module defined above, it's sometimes preferable to split business
-    // logic and the CLI into two separate modules.
-    //
-    // If your goal is to create a Zig library for others to use, consider if
-    // it might benefit from also exposing a CLI tool. A parser library for a
-    // data serialization format could also bundle a CLI syntax checker, for example.
-    //
-    // If instead your goal is to create an executable, consider if users might
-    // be interested in also being able to embed the core functionality of your
-    // program in their own executable in order to avoid the overhead involved in
-    // subprocessing your CLI tool.
-    //
-    // If neither case applies to you, feel free to delete the declaration you
-    // don't need and to put everything under a single module.
     const exe = addWhereizExecutable(b, mod, target, optimize);
 
-    // This declares intent for the executable to be installed into the
-    // install prefix when running `zig build` (i.e. when executing the default
-    // step). By default the install prefix is `zig-out/` but can be overridden
-    // by passing `--prefix` or `-p`.
     b.installArtifact(exe);
 
     // This creates a top level step. Top level steps have a name and can be
