@@ -22,17 +22,6 @@ pub const Config = struct {
     dll_directory: ?[]const u8,
 };
 
-/// This is a documentation comment to explain the `printAnotherMessage` function below.
-///
-/// Accepting an `Io.Writer` instance is a handy way to write reusable code.
-pub fn printAnotherMessage(writer: *Io.Writer) Io.Writer.Error!void {
-    try writer.print("Run `zig build test` to run the tests.\n", .{});
-}
-
-pub fn add(a: i32, b: i32) i32 {
-    return a + b;
-}
-
 pub fn searchOrder(allocator: Allocator, config: *const Config) ![][]const u8 {
     var list: std.ArrayList([]const u8) = .empty;
     errdefer list.deinit(allocator);
@@ -89,7 +78,7 @@ pub fn findFilePaths(io: Io, allocator: Allocator, config: *const Config, filena
             const candidate = try joinFilename(allocator, dll_directory, filename);
             defer allocator.free(candidate);
             if (fileExists(io, candidate)) {
-                try results.append(allocator, try allocator.dupe(u8, candidate));
+                try appendUnique(allocator, &results, candidate);
             }
         }
     }
@@ -102,10 +91,17 @@ pub fn findFilePaths(io: Io, allocator: Allocator, config: *const Config, filena
         const candidate = try joinFilename(allocator, directory, filename);
         defer allocator.free(candidate);
         if (!fileExists(io, candidate)) continue;
-        try results.append(allocator, try allocator.dupe(u8, candidate));
+        try appendUnique(allocator, &results, candidate);
     }
 
     return results.toOwnedSlice(allocator);
+}
+
+fn appendUnique(allocator: Allocator, results: *std.ArrayList([]const u8), candidate: []const u8) !void {
+    for (results.items) |path| {
+        if (std.ascii.eqlIgnoreCase(path, candidate)) return;
+    }
+    try results.append(allocator, try allocator.dupe(u8, candidate));
 }
 
 fn joinFilename(allocator: Allocator, directory: []const u8, filename: []const u8) ![]u8 {
@@ -199,10 +195,6 @@ fn dirExists(io: Io, path: []const u8) bool {
     var dir = Io.Dir.openDirAbsolute(io, path, .{}) catch return false;
     dir.close(io);
     return true;
-}
-
-test "basic add functionality" {
-    try std.testing.expect(add(3, 7) == 10);
 }
 
 test "search order places working dir after system dirs when safe dll search is enabled" {
@@ -458,6 +450,89 @@ test "findFilePaths keeps an absolute filename as is" {
 
     try testing.expectEqual(@as(usize, 1), results.len);
     try testing.expectEqualStrings(absolute, results[0]);
+}
+
+test "findFilePaths reports an absolute filename once across many search dirs" {
+    var tmp = testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    try makeDirs(&tmp, &.{ "exe_dir", "work", "sys", "win_sys", "win", "path1" });
+    try writeFileInDirs(&tmp, &.{"exe_dir"}, "bar.txt");
+
+    const config = try makeConfig(testing.allocator, &tmp, .{
+        .safe_dll_search = true,
+        .working_dir = "work",
+        .executable_dir = "exe_dir",
+        .system_dir = "sys",
+        .windows_system_dir = "win_sys",
+        .windows_dir = "win",
+        .machine_path = &.{"path1"},
+        .known_dlls = &.{},
+        .dll_directory = null,
+    });
+    defer freeConfig(testing.allocator, &config);
+
+    const absolute = try std.fs.path.join(testing.allocator, &.{ config.base, "exe_dir", "bar.txt" });
+    defer testing.allocator.free(absolute);
+
+    const results = try findFilePaths(std.testing.io, testing.allocator, &config.config, absolute);
+    defer freePaths(testing.allocator, results);
+
+    try testing.expectEqual(@as(usize, 1), results.len);
+    try testing.expectEqualStrings(absolute, results[0]);
+}
+
+test "findFilePaths reports a file once when a directory repeats in the search order" {
+    var tmp = testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    try makeDirs(&tmp, &.{ "exe_dir", "work" });
+    try writeFileInDirs(&tmp, &.{"work"}, "foo.txt");
+
+    const config = try makeConfig(testing.allocator, &tmp, .{
+        .safe_dll_search = true,
+        .working_dir = "work",
+        .executable_dir = "exe_dir",
+        .system_dir = "sys",
+        .windows_system_dir = "win_sys",
+        .windows_dir = "win",
+        .machine_path = &.{"work"},
+        .known_dlls = &.{},
+        .dll_directory = null,
+    });
+    defer freeConfig(testing.allocator, &config);
+
+    const results = try findFilePaths(std.testing.io, testing.allocator, &config.config, "foo.txt");
+    defer freePaths(testing.allocator, results);
+
+    const expected = [_][]const u8{"work/foo.txt"};
+    try expectResultsEqual(config.base, &expected, results);
+}
+
+test "findFilePaths reports a file once when directories differ only by case" {
+    var tmp = testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    try makeDirs(&tmp, &.{ "exe_dir", "work" });
+    try writeFileInDirs(&tmp, &.{"work"}, "foo.txt");
+
+    const config = try makeConfig(testing.allocator, &tmp, .{
+        .safe_dll_search = true,
+        .working_dir = "work",
+        .executable_dir = "exe_dir",
+        .system_dir = "sys",
+        .windows_system_dir = "win_sys",
+        .windows_dir = "win",
+        .machine_path = &.{"WORK"},
+        .known_dlls = &.{},
+        .dll_directory = null,
+    });
+    defer freeConfig(testing.allocator, &config);
+
+    const results = try findFilePaths(std.testing.io, testing.allocator, &config.config, "foo.txt");
+    defer freePaths(testing.allocator, results);
+
+    try testing.expectEqual(@as(usize, 1), results.len);
 }
 
 const MakeConfigOptions = struct {
