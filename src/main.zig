@@ -1,7 +1,7 @@
 const std = @import("std");
 const Io = std.Io;
 
-const whereiz = @import("whereiz");
+const whereiz = @import("whereiz.zig");
 const platform = @import("platform.zig");
 
 pub fn main(init: std.process.Init) !void {

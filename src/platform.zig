@@ -1,7 +1,7 @@
 const std = @import("std");
 const builtin = @import("builtin");
 
-const whereiz = @import("whereiz");
+const whereiz = @import("whereiz.zig");
 
 const windows = std.os.windows;
 const Architecture = whereiz.Architecture;
