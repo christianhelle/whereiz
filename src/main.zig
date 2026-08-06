@@ -2,70 +2,57 @@ const std = @import("std");
 const Io = std.Io;
 
 const whereiz = @import("whereiz");
+const platform = @import("platform.zig");
 
 pub fn main(init: std.process.Init) !void {
-    // Prints to stderr, unbuffered, ignoring potential errors.
-    std.debug.print("All your {s} are belong to us.\n", .{"codebase"});
-
-    // This is appropriate for anything that lives as long as the process.
-    const arena: std.mem.Allocator = init.arena.allocator();
-
-    // Accessing command line arguments:
-    const args = try init.minimal.args.toSlice(arena);
-    for (args) |arg| {
-        std.log.info("arg: {s}", .{arg});
-    }
-
-    // In order to do I/O operations need an `Io` instance.
+    const arena = init.arena.allocator();
     const io = init.io;
 
-    // Stdout is for the actual output of your application, for example if you
-    // are implementing gzip, then only the compressed bytes should be sent to
-    // stdout, not any debugging messages.
-    var stdout_buffer: [1024]u8 = undefined;
+    const args = try init.minimal.args.toSlice(arena);
+    const program_args = args[1..];
+
+    const cli = whereiz.parseArgs(platform.defaultArchitecture(), program_args);
+    if (cli.show_usage) {
+        std.debug.print("Usage: whereis [command/filename] [optional:x86/x64] [optional:working directory] [optional:executeable directory]\n", .{});
+        return;
+    }
+
+    var working_dir = try platform.currentDirectory(io, arena);
+    var executable_dir = try platform.executableDirectory(io, arena);
+
+    if (cli.working_dir) |dir| {
+        if (Io.Dir.openDirAbsolute(io, dir, .{})) |handle| {
+            handle.close(io);
+            working_dir = dir;
+        } else |_| {}
+    }
+    if (cli.executable_dir) |dir| {
+        if (Io.Dir.openDirAbsolute(io, dir, .{})) |handle| {
+            handle.close(io);
+            executable_dir = dir;
+        } else |_| {}
+    }
+
+    const config = whereiz.Config{
+        .safe_dll_search = try platform.safeDllSearch(arena),
+        .working_dir = working_dir,
+        .executable_dir = executable_dir,
+        .system_dir = try platform.systemDirectory(arena),
+        .windows_system_dir = "C:\\Windows\\System",
+        .windows_dir = try platform.windowsDirectory(arena),
+        .machine_path = try platform.machinePath(arena),
+        .known_dlls = try platform.knownDlls(arena),
+        .dll_directory = try platform.dllDirectory(arena, cli.architecture),
+    };
+
+    const results = try whereiz.find(io, arena, &config, cli.query.?);
+
+    var stdout_buffer: [4096]u8 = undefined;
     var stdout_file_writer: Io.File.Writer = .init(.stdout(), io, &stdout_buffer);
     const stdout_writer = &stdout_file_writer.interface;
 
-    try whereiz.printAnotherMessage(stdout_writer);
-
-    try stdout_writer.flush(); // Don't forget to flush!
-}
-
-test "simple test" {
-    const gpa = std.testing.allocator;
-    var list: std.ArrayList(i32) = .empty;
-    defer list.deinit(gpa); // Try commenting this out and see if zig detects the memory leak!
-    try list.append(gpa, 42);
-    try std.testing.expectEqual(@as(i32, 42), list.pop());
-}
-
-test "fuzz example" {
-    try std.testing.fuzz({}, testOne, .{});
-}
-
-fn testOne(context: void, smith: *std.testing.Smith) !void {
-    _ = context;
-    // Try passing `--fuzz` to `zig build test` and see if it manages to fail this test case!
-
-    const gpa = std.testing.allocator;
-    var list: std.ArrayList(u8) = .empty;
-    defer list.deinit(gpa);
-    while (!smith.eos()) switch (smith.value(enum { add_data, dup_data })) {
-        .add_data => {
-            const slice = try list.addManyAsSlice(gpa, smith.value(u4));
-            smith.bytes(slice);
-        },
-        .dup_data => {
-            if (list.items.len == 0) continue;
-            if (list.items.len > std.math.maxInt(u32)) return error.SkipZigTest;
-            const len = smith.valueRangeAtMost(u32, 1, @min(32, list.items.len));
-            const off = smith.valueRangeAtMost(u32, 0, @intCast(list.items.len - len));
-            try list.appendSlice(gpa, list.items[off..][0..len]);
-            try std.testing.expectEqualSlices(
-                u8,
-                list.items[off..][0..len],
-                list.items[list.items.len - len ..],
-            );
-        },
-    };
+    for (results) |path| {
+        try stdout_writer.print("{s}\n", .{path});
+    }
+    try stdout_writer.flush();
 }
