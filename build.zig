@@ -45,17 +45,6 @@ pub fn build(b: *std.Build) void {
     const install_release = InstallReleaseStep.create(b, release_exe.getEmittedBin(), getInstallPrefix(b), release_exe.out_filename);
     install_release_step.dependOn(&install_release.step);
 
-    // Just like flags, top level steps are also listed in the `--help` menu.
-    //
-    // The Zig build system is entirely implemented in userland, which means
-    // that it cannot hook into private compiler APIs. All compilation work
-    // orchestrated by the build system will result in other Zig compiler
-    // subcommands being invoked with the right flags defined. You can observe
-    // these invocations when one fails (or you pass a flag to increase
-    // verbosity) to validate assumptions and diagnose problems.
-    //
-    // Lastly, the Zig build system is relatively simple and self-contained,
-    // and reading its source code will allow you to master it.
 }
 
 fn addWhereizExecutable(
@@ -78,18 +67,15 @@ fn addWhereizExecutable(
 }
 
 fn getInstallPrefix(b: *std.Build) []const u8 {
-    // Honor an explicit `--prefix` flag.
     const default_prefix = b.build_root.join(b.allocator, &.{"zig-out"}) catch @panic("OOM");
     if (!std.mem.eql(u8, b.install_prefix, default_prefix)) {
         return b.install_prefix;
     }
 
-    // Honor the INSTALL_DIR environment variable used by the install scripts.
     if (b.graph.environ_map.get("INSTALL_DIR")) |install_dir| {
         if (install_dir.len > 0) return install_dir;
     }
 
-    // Default to $HOME/.local/bin, falling back to %USERPROFILE% on Windows.
     if (b.graph.environ_map.get("HOME")) |home| {
         if (home.len > 0) return b.pathJoin(&.{ home, ".local", "bin" });
     }
