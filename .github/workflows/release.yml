@@ -1,0 +1,47 @@
+name: Release
+
+on:
+  workflow_dispatch:
+
+env:
+  VERSION: "0.1.${{ github.run_number }}"
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: mlugg/setup-zig@v2
+        with:
+          version: 0.16.0
+
+      - name: Build
+        run: zig build -Doptimize=ReleaseSmall -Dtarget=x86_64-windows
+
+      - name: Package
+        run: Compress-Archive -Path zig-out\bin\whereiz.exe -DestinationPath whereiz-windows-x86_64.zip
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: whereiz-windows-x86_64
+          path: whereiz-windows-x86_64.zip
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          merge-multiple: true
+
+      - name: Create release
+        uses: christianhelle/action-gh-release@v2
+        with:
+          tag_name: ${{ env.VERSION }}
+          generate_release_notes: true
+          files: |
+            *.zip
