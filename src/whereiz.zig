@@ -186,12 +186,14 @@ pub fn parseArgs(default_architecture: Architecture, args: []const []const u8) C
 }
 
 fn fileExists(io: Io, path: []const u8) bool {
+    if (!std.Io.Dir.path.isAbsolute(path)) return false;
     var file = Io.Dir.openFileAbsolute(io, path, .{}) catch return false;
     file.close(io);
     return true;
 }
 
 fn dirExists(io: Io, path: []const u8) bool {
+    if (!std.Io.Dir.path.isAbsolute(path)) return false;
     var dir = Io.Dir.openDirAbsolute(io, path, .{}) catch return false;
     dir.close(io);
     return true;
@@ -533,6 +535,62 @@ test "findFilePaths reports a file once when directories differ only by case" {
     defer freePaths(testing.allocator, results);
 
     try testing.expectEqual(@as(usize, 1), results.len);
+}
+
+test "findFilePaths skips non-absolute search directories" {
+    var tmp = testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    try makeDirs(&tmp, &.{"exe_dir"});
+    try writeFileInDirs(&tmp, &.{"exe_dir"}, "foo.txt");
+
+    const config = try makeConfig(testing.allocator, &tmp, .{
+        .safe_dll_search = true,
+        .working_dir = "work",
+        .executable_dir = "exe_dir",
+        .system_dir = "sys",
+        .windows_system_dir = "win_sys",
+        .windows_dir = "win",
+        .machine_path = &.{ "relative-dir", "-garbage" },
+        .known_dlls = &.{},
+        .dll_directory = null,
+    });
+    defer freeConfig(testing.allocator, &config);
+
+    const results = try findFilePaths(std.testing.io, testing.allocator, &config.config, "foo.txt");
+    defer freePaths(testing.allocator, results);
+
+    const expected = [_][]const u8{"exe_dir/foo.txt"};
+    try expectResultsEqual(config.base, &expected, results);
+}
+
+test "findFilePaths skips a non-absolute known dll directory" {
+    var tmp = testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    try makeDirs(&tmp, &.{"sys"});
+    try writeFileInDirs(&tmp, &.{"sys"}, "kernel32.dll");
+
+    var config = try makeConfig(testing.allocator, &tmp, .{
+        .safe_dll_search = true,
+        .working_dir = "work",
+        .executable_dir = "exe_dir",
+        .system_dir = "sys",
+        .windows_system_dir = "win_sys",
+        .windows_dir = "win",
+        .machine_path = &.{},
+        .known_dlls = &.{"kernel32.dll"},
+        .dll_directory = "dlldir",
+    });
+    defer freeConfig(testing.allocator, &config);
+
+    config.config.dll_directory = "relative-dlldir";
+
+    const results = try findFilePaths(std.testing.io, testing.allocator, &config.config, "kernel32.dll");
+    defer freePaths(testing.allocator, results);
+
+    const expected = [_][]const u8{"sys/kernel32.dll"};
+    try expectResultsEqual(config.base, &expected, results);
 }
 
 const MakeConfigOptions = struct {
