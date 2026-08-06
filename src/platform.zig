@@ -126,32 +126,32 @@ pub fn knownDlls(allocator: Allocator) ![]const []const u8 {
         results.deinit(allocator);
     }
 
-    const key = try openSubKeyPath(allocator, windows.HKEY_LOCAL_MACHINE, known_dlls_path) orelse return try results.toOwnedSlice(allocator);
-    defer _ = RegCloseKey(key);
+    const key = try registry.Key.open(allocator, windows.HKEY_LOCAL_MACHINE, known_dlls_path) orelse return try results.toOwnedSlice(allocator);
+    defer key.close();
 
-    const exclude_key = try openSubKeyPath(allocator, windows.HKEY_LOCAL_MACHINE, exclude_from_known_dlls_path);
+    const exclude_key = try registry.Key.open(allocator, windows.HKEY_LOCAL_MACHINE, exclude_from_known_dlls_path);
     if (exclude_key) |exclude| {
-        defer _ = RegCloseKey(exclude);
-        const exclude_names = try enumValueNames(allocator, exclude);
-        defer freeValueNames(allocator, exclude_names);
+        defer exclude.close();
+        const exclude_names = try exclude.enumValueNames(allocator);
+        defer registry.freeValueNames(allocator, exclude_names);
 
-        const value_names = try enumValueNames(allocator, key);
-        defer freeValueNames(allocator, value_names);
+        const value_names = try key.enumValueNames(allocator);
+        defer registry.freeValueNames(allocator, value_names);
 
         for (value_names) |name| {
             if (std.mem.eql(u8, name, "DllDirectory") or std.mem.eql(u8, name, "DllDirectory32")) continue;
             if (containsIgnoreCase(exclude_names, name)) continue;
-            if (try queryStringValue(allocator, key, name)) |value| {
+            if (try key.queryString(allocator, name)) |value| {
                 try results.append(allocator, value);
             }
         }
     } else {
-        const value_names = try enumValueNames(allocator, key);
-        defer freeValueNames(allocator, value_names);
+        const value_names = try key.enumValueNames(allocator);
+        defer registry.freeValueNames(allocator, value_names);
 
         for (value_names) |name| {
             if (std.mem.eql(u8, name, "DllDirectory") or std.mem.eql(u8, name, "DllDirectory32")) continue;
-            if (try queryStringValue(allocator, key, name)) |value| {
+            if (try key.queryString(allocator, name)) |value| {
                 try results.append(allocator, value);
             }
         }
@@ -161,14 +161,14 @@ pub fn knownDlls(allocator: Allocator) ![]const []const u8 {
 }
 
 pub fn dllDirectory(allocator: Allocator, architecture: Architecture) !?[]const u8 {
-    const key = try openSubKeyPath(allocator, windows.HKEY_LOCAL_MACHINE, known_dlls_path) orelse return null;
-    defer _ = RegCloseKey(key);
+    const key = try registry.Key.open(allocator, windows.HKEY_LOCAL_MACHINE, known_dlls_path) orelse return null;
+    defer key.close();
 
     const value_name = switch (architecture) {
         .x64 => "DllDirectory",
         .x86 => "DllDirectory32",
     };
-    return queryStringValue(allocator, key, value_name);
+    return key.queryString(allocator, value_name);
 }
 
 fn openSubKeyPath(allocator: Allocator, root: HKEY, path: []const u8) !?HKEY {
