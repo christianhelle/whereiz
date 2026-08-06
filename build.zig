@@ -118,6 +118,11 @@ pub fn build(b: *std.Build) void {
     test_step.dependOn(&run_mod_tests.step);
     test_step.dependOn(&run_exe_tests.step);
 
+    const release_exe = addWhereizExecutable(b, mod, target, .ReleaseSmall);
+    const install_release_step = b.step("install-release", "Build ReleaseSmall and install to the docs install directory");
+    const install_release = InstallReleaseStep.create(b, release_exe.getEmittedBin(), getInstallPrefix(b), release_exe.out_filename);
+    install_release_step.dependOn(&install_release.step);
+
     // Just like flags, top level steps are also listed in the `--help` menu.
     //
     // The Zig build system is entirely implemented in userland, which means
