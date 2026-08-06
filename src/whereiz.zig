@@ -120,6 +120,34 @@ fn isKnownDll(config: *const Config, filename: []const u8) bool {
     return false;
 }
 
+pub fn findCommandPaths(io: Io, allocator: Allocator, config: *const Config, command: []const u8) ![][]const u8 {
+    var results: std.ArrayList([]const u8) = .empty;
+    errdefer {
+        for (results.items) |path| allocator.free(path);
+        results.deinit(allocator);
+    }
+
+    const candidates = try commandCandidates(allocator, command);
+    defer freeCandidates(allocator, candidates);
+
+    for (candidates) |candidate| {
+        const paths = try findFilePaths(io, allocator, config, candidate);
+        defer freePaths(allocator, paths);
+        for (paths) |path| {
+            try results.append(allocator, try allocator.dupe(u8, path));
+        }
+    }
+
+    return results.toOwnedSlice(allocator);
+}
+
+pub fn find(io: Io, allocator: Allocator, config: *const Config, query: []const u8) ![][]const u8 {
+    if (std.mem.indexOfScalar(u8, query, '.') != null) {
+        return findFilePaths(io, allocator, config, query);
+    }
+    return findCommandPaths(io, allocator, config, query);
+}
+
 fn fileExists(io: Io, path: []const u8) bool {
     var file = Io.Dir.openFileAbsolute(io, path, .{}) catch return false;
     file.close(io);
@@ -505,4 +533,86 @@ fn joinRelative(allocator: Allocator, base: []const u8, relative: []const u8) ![
     var it = std.mem.splitScalar(u8, relative, '/');
     while (it.next()) |part| try parts.append(allocator, part);
     return std.Io.Dir.path.join(allocator, parts.items);
+}
+
+test "findCommandPaths searches every candidate extension across the search order" {
+    var tmp = testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    try makeDirs(&tmp, &.{ "exe_dir", "work", "path1", "path2" });
+    try writeFileInDirs(&tmp, &.{ "exe_dir", "path1" }, "cmd.exe");
+    try writeFileInDirs(&tmp, &.{"path2"}, "cmd.bat");
+
+    const config = try makeConfig(testing.allocator, &tmp, .{
+        .safe_dll_search = true,
+        .working_dir = "work",
+        .executable_dir = "exe_dir",
+        .system_dir = "sys",
+        .windows_system_dir = "win_sys",
+        .windows_dir = "win",
+        .machine_path = &.{ "path1", "path2" },
+        .known_dlls = &.{},
+        .dll_directory = null,
+    });
+    defer freeConfig(testing.allocator, &config);
+
+    const results = try findCommandPaths(std.testing.io, testing.allocator, &config.config, "cmd");
+    defer freePaths(testing.allocator, results);
+
+    const expected = [_][]const u8{ "exe_dir/cmd.exe", "path1/cmd.exe", "path2/cmd.bat" };
+    try expectResultsEqual(config.base, &expected, results);
+}
+
+test "find dispatches bare names to command search" {
+    var tmp = testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    try makeDirs(&tmp, &.{"exe_dir"});
+    try writeFileInDirs(&tmp, &.{"exe_dir"}, "cmd.exe");
+
+    const config = try makeConfig(testing.allocator, &tmp, .{
+        .safe_dll_search = true,
+        .working_dir = "work",
+        .executable_dir = "exe_dir",
+        .system_dir = "sys",
+        .windows_system_dir = "win_sys",
+        .windows_dir = "win",
+        .machine_path = &.{},
+        .known_dlls = &.{},
+        .dll_directory = null,
+    });
+    defer freeConfig(testing.allocator, &config);
+
+    const results = try find(std.testing.io, testing.allocator, &config.config, "cmd");
+    defer freePaths(testing.allocator, results);
+
+    const expected = [_][]const u8{"exe_dir/cmd.exe"};
+    try expectResultsEqual(config.base, &expected, results);
+}
+
+test "find dispatches dotted names to file search" {
+    var tmp = testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    try makeDirs(&tmp, &.{"exe_dir"});
+    try writeFileInDirs(&tmp, &.{"exe_dir"}, "kernel32.dll");
+
+    const config = try makeConfig(testing.allocator, &tmp, .{
+        .safe_dll_search = true,
+        .working_dir = "work",
+        .executable_dir = "exe_dir",
+        .system_dir = "sys",
+        .windows_system_dir = "win_sys",
+        .windows_dir = "win",
+        .machine_path = &.{},
+        .known_dlls = &.{},
+        .dll_directory = null,
+    });
+    defer freeConfig(testing.allocator, &config);
+
+    const results = try find(std.testing.io, testing.allocator, &config.config, "kernel32.dll");
+    defer freePaths(testing.allocator, results);
+
+    const expected = [_][]const u8{"exe_dir/kernel32.dll"};
+    try expectResultsEqual(config.base, &expected, results);
 }
