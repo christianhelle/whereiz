@@ -21,16 +21,20 @@ pub fn main(init: std.process.Init) !void {
     var executable_dir = try platform.executableDirectory(io, arena);
 
     if (cli.working_dir) |dir| {
-        if (Io.Dir.openDirAbsolute(io, dir, .{})) |handle| {
-            handle.close(io);
-            working_dir = dir;
-        } else |_| {}
+        if (std.Io.Dir.path.isAbsolute(dir)) {
+            if (Io.Dir.openDirAbsolute(io, dir, .{})) |handle| {
+                handle.close(io);
+                working_dir = dir;
+            } else |_| {}
+        }
     }
     if (cli.executable_dir) |dir| {
-        if (Io.Dir.openDirAbsolute(io, dir, .{})) |handle| {
-            handle.close(io);
-            executable_dir = dir;
-        } else |_| {}
+        if (std.Io.Dir.path.isAbsolute(dir)) {
+            if (Io.Dir.openDirAbsolute(io, dir, .{})) |handle| {
+                handle.close(io);
+                executable_dir = dir;
+            } else |_| {}
+        }
     }
 
     const config = whereiz.Config{
@@ -40,7 +44,7 @@ pub fn main(init: std.process.Init) !void {
         .system_dir = try platform.systemDirectory(arena),
         .windows_system_dir = "C:\\Windows\\System",
         .windows_dir = try platform.windowsDirectory(arena),
-        .machine_path = try platform.machinePath(arena),
+        .machine_path = try platform.machinePath(init.environ_map, arena),
         .known_dlls = try platform.knownDlls(arena),
         .dll_directory = try platform.dllDirectory(arena, cli.architecture),
     };

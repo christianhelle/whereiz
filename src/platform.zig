@@ -58,8 +58,6 @@ extern "kernel32" fn GetSystemDirectoryW(lp_buffer: LPWSTR, u_size: UINT) callco
 
 extern "kernel32" fn GetWindowsDirectoryW(lp_buffer: LPWSTR, u_size: UINT) callconv(.winapi) UINT;
 
-extern "kernel32" fn ExpandEnvironmentStringsW(lp_src: LPCWSTR, lp_dst: ?LPWSTR, n_size: DWORD) callconv(.winapi) DWORD;
-
 comptime {
     if (builtin.os.tag != .windows) @compileError("whereiz only supports Windows");
 }
@@ -67,7 +65,6 @@ comptime {
 const known_dlls_path = "SYSTEM\\CurrentControlSet\\Control\\Session Manager\\KnownDLLs";
 const exclude_from_known_dlls_path = "SYSTEM\\CurrentControlSet\\Control\\Session Manager\\ExcludeFromKnownDlls";
 const session_manager_path = "SYSTEM\\CurrentControlSet\\Control\\Session Manager";
-const environment_path = "SYSTEM\\CurrentControlSet\\Control\\Session Manager\\Environment";
 
 pub fn defaultArchitecture() Architecture {
     return switch (builtin.cpu.arch) {
@@ -103,23 +100,16 @@ pub fn safeDllSearch(allocator: Allocator) !bool {
     return value != 0;
 }
 
-pub fn machinePath(allocator: Allocator) ![]const []const u8 {
+pub fn machinePath(environ_map: *std.process.Environ.Map, allocator: Allocator) ![]const []const u8 {
     var dirs: std.ArrayList([]const u8) = .empty;
     errdefer {
         for (dirs.items) |dir| allocator.free(dir);
         dirs.deinit(allocator);
     }
 
-    const key = try openSubKeyPath(allocator, windows.HKEY_LOCAL_MACHINE, environment_path) orelse return try dirs.toOwnedSlice(allocator);
-    defer _ = RegCloseKey(key);
+    const raw = environ_map.get("PATH") orelse return try dirs.toOwnedSlice(allocator);
 
-    const raw = try queryStringValue(allocator, key, "Path") orelse return try dirs.toOwnedSlice(allocator);
-    defer allocator.free(raw);
-
-    const expanded = try expandEnvironmentStrings(allocator, raw);
-    defer allocator.free(expanded);
-
-    var it = std.mem.splitScalar(u8, expanded, ';');
+    var it = std.mem.splitScalar(u8, raw, ';');
     while (it.next()) |entry| {
         if (entry.len == 0) continue;
         try dirs.append(allocator, try allocator.dupe(u8, entry));
@@ -269,18 +259,4 @@ fn containsIgnoreCase(haystack: []const []const u8, needle: []const u8) bool {
         if (std.ascii.eqlIgnoreCase(entry, needle)) return true;
     }
     return false;
-}
-
-fn expandEnvironmentStrings(allocator: Allocator, path: []const u8) ![]const u8 {
-    const path_w = try std.unicode.wtf8ToWtf16LeAllocZ(allocator, path);
-    defer allocator.free(path_w);
-
-    const size = ExpandEnvironmentStringsW(path_w.ptr, null, 0);
-    if (size == 0) return allocator.dupe(u8, path);
-
-    const buffer = try allocator.alloc(u16, size);
-    defer allocator.free(buffer);
-    _ = ExpandEnvironmentStringsW(path_w.ptr, @ptrCast(buffer.ptr), size);
-
-    return std.unicode.wtf16LeToWtf8Alloc(allocator, buffer[0 .. size - 1]);
 }
