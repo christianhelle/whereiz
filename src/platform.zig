@@ -20,10 +20,6 @@ comptime {
     if (builtin.os.tag != .windows) @compileError("whereiz only supports Windows");
 }
 
-const known_dlls_path = "SYSTEM\\CurrentControlSet\\Control\\Session Manager\\KnownDLLs";
-const exclude_from_known_dlls_path = "SYSTEM\\CurrentControlSet\\Control\\Session Manager\\ExcludeFromKnownDlls";
-const session_manager_path = "SYSTEM\\CurrentControlSet\\Control\\Session Manager";
-
 pub fn defaultArchitecture() Architecture {
     return switch (builtin.cpu.arch) {
         .x86_64, .aarch64 => .x64,
@@ -52,6 +48,7 @@ pub fn windowsDirectory(allocator: Allocator) ![]const u8 {
 }
 
 pub fn safeDllSearch(allocator: Allocator) !bool {
+    const session_manager_path = "SYSTEM\\CurrentControlSet\\Control\\Session Manager";
     const key = try registry.Key.open(allocator, windows.HKEY_LOCAL_MACHINE, session_manager_path) orelse return true;
     defer key.close();
     const value = try key.queryDword(allocator, "SafeDllSearchMode") orelse return true;
@@ -83,10 +80,18 @@ pub fn knownDlls(allocator: Allocator) ![]const []const u8 {
         results.deinit(allocator);
     }
 
-    const key = try registry.Key.open(allocator, windows.HKEY_LOCAL_MACHINE, known_dlls_path) orelse return try results.toOwnedSlice(allocator);
+    const key = try registry.Key.open(
+        allocator,
+        windows.HKEY_LOCAL_MACHINE,
+        "SYSTEM\\CurrentControlSet\\Control\\Session Manager\\KnownDLLs",
+    ) orelse return try results.toOwnedSlice(allocator);
     defer key.close();
 
-    const exclude_key = try registry.Key.open(allocator, windows.HKEY_LOCAL_MACHINE, exclude_from_known_dlls_path);
+    const exclude_key = try registry.Key.open(
+        allocator,
+        windows.HKEY_LOCAL_MACHINE,
+        "SYSTEM\\CurrentControlSet\\Control\\Session Manager\\ExcludeFromKnownDlls",
+    );
     if (exclude_key) |exclude| {
         defer exclude.close();
         const exclude_names = try exclude.enumValueNames(allocator);
@@ -118,7 +123,11 @@ pub fn knownDlls(allocator: Allocator) ![]const []const u8 {
 }
 
 pub fn dllDirectory(allocator: Allocator, architecture: Architecture) !?[]const u8 {
-    const key = try registry.Key.open(allocator, windows.HKEY_LOCAL_MACHINE, known_dlls_path) orelse return null;
+    const key = try registry.Key.open(
+        allocator,
+        windows.HKEY_LOCAL_MACHINE,
+        "SYSTEM\\CurrentControlSet\\Control\\Session Manager\\KnownDLLs",
+    ) orelse return null;
     defer key.close();
 
     const value_name = switch (architecture) {
