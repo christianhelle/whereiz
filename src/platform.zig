@@ -9,51 +9,8 @@ const Architecture = whereiz.Architecture;
 const Allocator = std.mem.Allocator;
 const Io = std.Io;
 
-const LSTATUS = windows.LSTATUS;
-const HKEY = windows.HKEY;
-const REGSAM = windows.REGSAM;
-const DWORD = windows.DWORD;
 const UINT = windows.UINT;
-const LPCWSTR = windows.LPCWSTR;
 const LPWSTR = windows.LPWSTR;
-
-const ERROR_SUCCESS: LSTATUS = 0;
-const ERROR_MORE_DATA: LSTATUS = 234;
-const ERROR_NO_MORE_ITEMS: LSTATUS = 259;
-
-const REG_DWORD: DWORD = 4;
-
-const KEY_READ: REGSAM = @bitCast(@as(u32, 0x0002_0019));
-
-extern "advapi32" fn RegOpenKeyExW(
-    h_key: HKEY,
-    lp_sub_key: ?LPCWSTR,
-    ul_options: DWORD,
-    sam_desired: REGSAM,
-    phk_result: *HKEY,
-) callconv(.winapi) LSTATUS;
-
-extern "advapi32" fn RegCloseKey(h_key: HKEY) callconv(.winapi) LSTATUS;
-
-extern "advapi32" fn RegQueryValueExW(
-    h_key: HKEY,
-    lp_value_name: ?LPCWSTR,
-    lp_reserved: ?*DWORD,
-    lp_type: ?*DWORD,
-    lp_data: ?[*]u8,
-    lpcb_data: *DWORD,
-) callconv(.winapi) LSTATUS;
-
-extern "advapi32" fn RegEnumValueW(
-    h_key: HKEY,
-    dw_index: DWORD,
-    lp_value_name: LPWSTR,
-    lpcch_value_name: *DWORD,
-    lp_reserved: ?*DWORD,
-    lp_type: ?*DWORD,
-    lp_data: ?[*]u8,
-    lpcb_data: ?*DWORD,
-) callconv(.winapi) LSTATUS;
 
 extern "kernel32" fn GetSystemDirectoryW(lp_buffer: LPWSTR, u_size: UINT) callconv(.winapi) UINT;
 
@@ -169,90 +126,6 @@ pub fn dllDirectory(allocator: Allocator, architecture: Architecture) !?[]const 
         .x86 => "DllDirectory32",
     };
     return key.queryString(allocator, value_name);
-}
-
-fn openSubKeyPath(allocator: Allocator, root: HKEY, path: []const u8) !?HKEY {
-    var result: ?HKEY = null;
-    var parent = root;
-    var it = std.mem.splitScalar(u8, path, '\\');
-    while (it.next()) |segment| {
-        if (segment.len == 0) continue;
-        const segment_w = try std.unicode.wtf8ToWtf16LeAllocZ(allocator, segment);
-        defer allocator.free(segment_w);
-
-        var child: HKEY = undefined;
-        const status = RegOpenKeyExW(parent, segment_w.ptr, 0, KEY_READ, &child);
-
-        if (result) |opened| _ = RegCloseKey(opened);
-        result = null;
-        if (status != ERROR_SUCCESS) return null;
-
-        result = child;
-        parent = child;
-    }
-    return result;
-}
-
-fn queryStringValue(allocator: Allocator, key: HKEY, name: []const u8) !?[]const u8 {
-    const name_w = try std.unicode.wtf8ToWtf16LeAllocZ(allocator, name);
-    defer allocator.free(name_w);
-
-    var value_type: DWORD = 0;
-    var size: DWORD = 0;
-    if (RegQueryValueExW(key, name_w.ptr, null, &value_type, null, &size) != ERROR_SUCCESS) return null;
-    if (size == 0 or size % 2 != 0) return null;
-
-    const buffer = try allocator.alloc(u16, size / 2);
-    defer allocator.free(buffer);
-    if (RegQueryValueExW(key, name_w.ptr, null, &value_type, @ptrCast(buffer.ptr), &size) != ERROR_SUCCESS) return null;
-
-    var end: usize = buffer.len;
-    while (end > 0 and buffer[end - 1] == 0) end -= 1;
-    return try std.unicode.wtf16LeToWtf8Alloc(allocator, buffer[0..end]);
-}
-
-fn queryDwordValue(allocator: Allocator, key: HKEY, name: []const u8) !?u32 {
-    const name_w = try std.unicode.wtf8ToWtf16LeAllocZ(allocator, name);
-    defer allocator.free(name_w);
-
-    var value_type: DWORD = 0;
-    var value: DWORD = 0;
-    var size: DWORD = @sizeOf(DWORD);
-    if (RegQueryValueExW(key, name_w.ptr, null, &value_type, @ptrCast(&value), &size) != ERROR_SUCCESS) return null;
-    if (value_type != REG_DWORD) return null;
-    return value;
-}
-
-fn enumValueNames(allocator: Allocator, key: HKEY) ![]const []const u8 {
-    var names: std.ArrayList([]const u8) = .empty;
-    errdefer {
-        for (names.items) |name| allocator.free(name);
-        names.deinit(allocator);
-    }
-
-    var index: DWORD = 0;
-    while (true) {
-        var buffer: [4096:0]u16 = undefined;
-        var name_length: DWORD = buffer.len;
-        const status = RegEnumValueW(key, index, &buffer, &name_length, null, null, null, null);
-        switch (status) {
-            ERROR_NO_MORE_ITEMS => break,
-            ERROR_SUCCESS => {},
-            ERROR_MORE_DATA => return error.NameTooLong,
-            else => break,
-        }
-        const name = try std.unicode.wtf16LeToWtf8Alloc(allocator, buffer[0..name_length]);
-        errdefer allocator.free(name);
-        try names.append(allocator, name);
-        index += 1;
-    }
-
-    return names.toOwnedSlice(allocator);
-}
-
-fn freeValueNames(allocator: Allocator, names: []const []const u8) void {
-    for (names) |name| allocator.free(name);
-    allocator.free(names);
 }
 
 fn containsIgnoreCase(haystack: []const []const u8, needle: []const u8) bool {
