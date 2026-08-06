@@ -4,12 +4,7 @@ pub fn build(b: *std.Build) void {
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
 
-    const mod = b.addModule("whereiz", .{
-        .root_source_file = b.path("src/whereiz.zig"),
-        .target = target,
-    });
-
-    const exe = addWhereizExecutable(b, mod, target, optimize);
+    const exe = addWhereizExecutable(b, target, optimize);
 
     b.installArtifact(exe);
 
@@ -33,7 +28,7 @@ pub fn build(b: *std.Build) void {
     const test_step = b.step("test", "Run tests");
     test_step.dependOn(&run_exe_tests.step);
 
-    const release_exe = addWhereizExecutable(b, mod, target, .ReleaseSmall);
+    const release_exe = addWhereizExecutable(b, target, .ReleaseSmall);
     const install_release_step = b.step("install-release", "Build ReleaseSmall and install to the docs install directory");
     const install_release = InstallReleaseStep.create(b, release_exe.getEmittedBin(), getInstallPrefix(b), release_exe.out_filename);
     install_release_step.dependOn(&install_release.step);
@@ -41,7 +36,6 @@ pub fn build(b: *std.Build) void {
 
 fn addWhereizExecutable(
     b: *std.Build,
-    mod: *std.Build.Module,
     target: std.Build.ResolvedTarget,
     optimize: std.builtin.OptimizeMode,
 ) *std.Build.Step.Compile {
@@ -51,9 +45,6 @@ fn addWhereizExecutable(
             .root_source_file = b.path("src/main.zig"),
             .target = target,
             .optimize = optimize,
-            .imports = &.{
-                .{ .name = "whereiz", .module = mod },
-            },
         }),
     });
 }
