@@ -48,6 +48,35 @@ pub fn searchOrder(allocator: Allocator, config: *const Config) ![][]const u8 {
     return list.toOwnedSlice(allocator);
 }
 
+pub fn commandCandidates(allocator: Allocator, command: []const u8) ![]const []const u8 {
+    var list: std.ArrayList([]const u8) = .empty;
+    errdefer {
+        for (list.items) |candidate| allocator.free(candidate);
+        list.deinit(allocator);
+    }
+
+    if (hasKnownExtension(command)) {
+        try list.append(allocator, try allocator.dupe(u8, command));
+    } else {
+        const extensions = [_][]const u8{ ".exe", ".cmd", ".bat" };
+        for (extensions) |extension| {
+            const candidate = try std.fmt.allocPrint(allocator, "{s}{s}", .{ command, extension });
+            errdefer allocator.free(candidate);
+            try list.append(allocator, candidate);
+        }
+    }
+
+    return list.toOwnedSlice(allocator);
+}
+
+fn hasKnownExtension(command: []const u8) bool {
+    const extensions = [_][]const u8{ ".exe", ".cmd", ".bat" };
+    for (extensions) |extension| {
+        if (std.ascii.endsWithIgnoreCase(command, extension)) return true;
+    }
+    return false;
+}
+
 test "basic add functionality" {
     try std.testing.expect(add(3, 7) == 10);
 }
@@ -114,4 +143,49 @@ fn expectPathsEqual(expected: []const []const u8, actual: []const []const u8) !v
     for (expected, 0..) |expected_path, i| {
         try testing.expectEqualStrings(expected_path, actual[i]);
     }
+}
+
+test "command without extension expands into exe, cmd, and bat candidates" {
+    const candidates = try commandCandidates(testing.allocator, "cmd");
+    defer freeCandidates(testing.allocator, candidates);
+
+    const expected = [_][]const u8{ "cmd.exe", "cmd.cmd", "cmd.bat" };
+    try expectPathsEqual(&expected, candidates);
+}
+
+test "command with exe extension is kept as is" {
+    const candidates = try commandCandidates(testing.allocator, "foo.exe");
+    defer freeCandidates(testing.allocator, candidates);
+
+    const expected = [_][]const u8{"foo.exe"};
+    try expectPathsEqual(&expected, candidates);
+}
+
+test "command with cmd extension is kept as is" {
+    const candidates = try commandCandidates(testing.allocator, "deploy.cmd");
+    defer freeCandidates(testing.allocator, candidates);
+
+    const expected = [_][]const u8{"deploy.cmd"};
+    try expectPathsEqual(&expected, candidates);
+}
+
+test "command with bat extension is kept as is" {
+    const candidates = try commandCandidates(testing.allocator, "install.bat");
+    defer freeCandidates(testing.allocator, candidates);
+
+    const expected = [_][]const u8{"install.bat"};
+    try expectPathsEqual(&expected, candidates);
+}
+
+test "command with uppercase exe extension is kept as is" {
+    const candidates = try commandCandidates(testing.allocator, "FOO.EXE");
+    defer freeCandidates(testing.allocator, candidates);
+
+    const expected = [_][]const u8{"FOO.EXE"};
+    try expectPathsEqual(&expected, candidates);
+}
+
+fn freeCandidates(allocator: Allocator, candidates: []const []const u8) void {
+    for (candidates) |candidate| allocator.free(candidate);
+    allocator.free(candidates);
 }
