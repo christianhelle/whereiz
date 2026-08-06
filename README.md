@@ -241,6 +241,22 @@ The search mirrors what Windows itself consults, read live from your machine:
 
 ---
 
+## Documentation
+
+A static documentation page lives in `docs/` and can be served by GitHub
+Pages. To enable it:
+
+1. Go to **Settings → Pages** for this repository.
+2. Under **Build and deployment**, set **Source** to **Deploy from a branch**.
+3. Select the branch (`main`) and the folder **`/docs`**.
+4. Save — the site will be published at `https://<user>.github.io/whereiz/`.
+
+The page is plain HTML (`docs/index.html`, with a `.nojekyll` marker so GitHub
+Pages serves it verbatim without Jekyll processing), so there is no build step
+or CI workflow required.
+
+---
+
 ## Project layout
 
 | Path | Purpose |
@@ -249,6 +265,7 @@ The search mirrors what Windows itself consults, read live from your machine:
 | `src/whereiz.zig` | Core search logic: search-order construction, command candidate expansion, file/command finding. Also the package root module. |
 | `src/platform.zig` | Windows-specific plumbing: registry queries, system/Windows directories, PATH and KnownDLLs discovery. |
 | `src/registry.zig` | Thin, typed wrapper over the `advapi32` registry API (`RegOpenKeyExW`, `RegQueryValueExW`, `RegEnumValueW`, …). |
+| `docs/index.html` | Static documentation page (served by GitHub Pages from the `/docs` folder). |
 | `docs/install.ps1` | Official PowerShell installer: downloads the latest release and adds it to your user `PATH`. |
 | `build.zig` | Build, test, run, and `install-release` steps. |
 
