@@ -38,12 +38,6 @@
         //    // `hash`, otherwise you are communicating that you expect to find the old hash at
         //    // the new URL. If the contents of a URL change this will result in a hash mismatch
         //    // which will prevent zig from using it.
-        //    .url = "https://example.com/foo.tar.gz",
-        //
-        //    // This is computed from the file contents of the directory of files that is
-        //    // obtained after fetching `url` and applying the inclusion rules given by
-        //    // `paths`.
-        //    //
         //    // This field is the source of truth; packages do not come from a `url`; they
         //    // come from a `hash`. `url` is just one of many possible mirrors for how to
         //    // obtain a package matching this `hash`.
@@ -74,8 +68,8 @@
         "build.zig",
         "build.zig.zon",
         "src",
+        "README.md",
         // For example...
         //"LICENSE",
-        //"README.md",
     },
 }
