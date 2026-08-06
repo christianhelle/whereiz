@@ -1,25 +1,20 @@
 # whereiz
 
-A Windows command-line tool that tells you **where** an executable, command, or
+A Windows specific implementation of the `whereis` command in Unix.
+This tool that tells you **where** an executable, command, or
 file actually **is** on disk — and in what order Windows would find it.
 
 `whereiz` answers questions like:
 
 - Where does `cmd.exe` resolve from, given my `PATH`?
 - Is this `.dll` picked up from the executable directory, `System32`, or somewhere else?
-- What would Windows find *first* if I run this command right now?
+- What would Windows find _first_ if I run this command right now?
 
 It replicates the Windows dynamic-link library (DLL) and executable search
-order — including the `SafeDllSearchMode` registry setting and the KnownDLLs
+order — including the `SafeDllSearchMode` registry setting and the
+[KnownDLLs(https://learn.microsoft.com/en-us/windows/win32/dlls/dynamic-link-library-search-order)
 list — so the answer matches what Windows itself would load, not just "the
 first match in `PATH`".
-
-> **Platform:** Windows only. `whereiz` refuses to compile on other operating
-> systems.
->
-> **Language:** Written in [Zig](https://ziglang.org), no runtime dependencies.
-
----
 
 ## Features
 
@@ -137,12 +132,12 @@ Runs the full test suite:
 whereiz <query> [x86|x64] [working-directory] [executable-directory]
 ```
 
-| Argument | Meaning | Default |
-| --- | --- | --- |
-| `<query>` | File name, command name, or absolute path to resolve. **Required.** | — |
-| `x86` / `x64` | Architecture used to pick the KnownDLLs directory (`DllDirectory32` vs `DllDirectory`). | Architecture of the running `whereiz.exe` |
-| `working-directory` | Override the current working directory used in the search. Only honored if it is an absolute path that exists. | The actual current directory |
-| `executable-directory` | Override the directory of the calling executable. Only honored if it is an absolute path that exists. | The directory containing `whereiz.exe` |
+| Argument               | Meaning                                                                                                        | Default                                   |
+| ---------------------- | -------------------------------------------------------------------------------------------------------------- | ----------------------------------------- |
+| `<query>`              | File name, command name, or absolute path to resolve. **Required.**                                            | —                                         |
+| `x86` / `x64`          | Architecture used to pick the KnownDLLs directory (`DllDirectory32` vs `DllDirectory`).                        | Architecture of the running `whereiz.exe` |
+| `working-directory`    | Override the current working directory used in the search. Only honored if it is an absolute path that exists. | The actual current directory              |
+| `executable-directory` | Override the directory of the calling executable. Only honored if it is an absolute path that exists.          | The directory containing `whereiz.exe`    |
 
 Running `whereiz` with no arguments prints usage.
 
@@ -238,38 +233,3 @@ The search mirrors what Windows itself consults, read live from your machine:
 - **System / Windows directories** — `GetSystemDirectoryW` / `GetWindowsDirectoryW`
 - **Executable directory** — the directory of the running `whereiz.exe`
 - **`PATH`** — the process environment
-
----
-
-## Documentation
-
-A static documentation page lives in `docs/` and can be served by GitHub
-Pages. To enable it:
-
-1. Go to **Settings → Pages** for this repository.
-2. Under **Build and deployment**, set **Source** to **Deploy from a branch**.
-3. Select the branch (`main`) and the folder **`/docs`**.
-4. Save — the site will be published at `https://<user>.github.io/whereiz/`.
-
-The page is plain HTML (`docs/index.html`, with a `.nojekyll` marker so GitHub
-Pages serves it verbatim without Jekyll processing), so there is no build step
-or CI workflow required.
-
----
-
-## Project layout
-
-| Path | Purpose |
-| --- | --- |
-| `src/main.zig` | CLI entry point: parses arguments, assembles the config, prints results. |
-| `src/whereiz.zig` | Core search logic: search-order construction, command candidate expansion, file/command finding. Also the package root module. |
-| `src/platform.zig` | Windows-specific plumbing: registry queries, system/Windows directories, PATH and KnownDLLs discovery. |
-| `src/registry.zig` | Thin, typed wrapper over the `advapi32` registry API (`RegOpenKeyExW`, `RegQueryValueExW`, `RegEnumValueW`, …). |
-| `docs/index.html` | Static documentation page (served by GitHub Pages from the `/docs` folder). |
-| `docs/install.ps1` | Official PowerShell installer: downloads the latest release and adds it to your user `PATH`. |
-| `build.zig` | Build, test, run, and `install-release` steps. |
-
-The `whereiz.zig` module is deliberately platform-independent: it operates on
-an injected `Config` (directories, flags, PATH entries, KnownDLLs) and an `Io`
-interface, so the search logic is fully unit-testable without touching the
-registry. The platform-specific discovery lives in `platform.zig`.
