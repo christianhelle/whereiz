@@ -26,12 +26,11 @@ jobs:
       - name: Setup Pages
         uses: actions/configure-pages@v5
       - name: Expose install script aliases
-        run: cp docs/install.ps1 install
+        run: cp docs/install.ps1 docs/install
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3
         with:
-          # Upload entire repository
-          path: '.'
+          path: "docs"
       - name: Deploy to GitHub Pages
         id: deployment
         uses: actions/deploy-pages@v5
