@@ -48,7 +48,7 @@ first match in `PATH`".
 Install the latest release and add it to your user `PATH`:
 
 ```powershell
-irm https://christianhelle.com/whereiz/install.ps1 | iex
+irm https://christianhelle.com/whereiz/install | iex
 ```
 
 The installer downloads the official release binary into
@@ -59,10 +59,10 @@ The installer supports these parameters:
 
 ```powershell
 # Install to a custom directory and do not touch PATH
-irm https://github.com/christianhelle/whereiz/raw/main/docs/install.ps1 | iex -InstallDir C:\tools -AddToPath $false
+irm https://christianhelle.com/whereiz/install | iex -InstallDir C:\tools -AddToPath $false
 
 # Pin a specific GitHub release tag
-irm https://github.com/christianhelle/whereiz/raw/main/docs/install.ps1 | iex -Version v1.2.3
+irm https://christianhelle.com/whereiz/install | iex -Version v1.2.3
 ```
 
 ### Option 2: Download a release
