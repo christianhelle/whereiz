@@ -80,7 +80,7 @@ See [Building](#building) below.
 ## Requirements
 
 - **Windows** (the build and the tool itself are Windows-only)
-- **Zig 0.16.0 or newer** to build from source
+- **Zig 0.17.1 or newer** to build from source
 - No third-party dependencies — just the standard library and the Windows API
 
 ---
